@@ -99,7 +99,8 @@ async fn role(ctx: Context<'_>) -> Result<(), Error> {
 
 # [tokio::main]
 async fn main() {
-    dotenv().expect("no settings '.env'");
+    // renderでは不要実機環境では必須
+    // dotenv().expect("no settings '.env'"); 
     
     let token = env::var("DISCORD_TOKEN")
         .expect("no settings'DISCORD_TOKEN' ");
