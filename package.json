@@ -1,0 +1,10 @@
+{
+  "name": "rust-discord-bot-server",
+  "version": "1.0.0",
+  "description": "Dummy server for Render health check.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}
