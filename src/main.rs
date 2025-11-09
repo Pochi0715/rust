@@ -1,4 +1,5 @@
-use dotenvy::dotenv;
+// renderの場合これも消す
+// use dotenvy::dotenv;
 use poise::serenity_prelude as serenity;
 use std::env;
 
