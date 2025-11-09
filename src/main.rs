@@ -40,7 +40,7 @@ async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     let ping_ms = ping_duration.as_millis();
 
     let response = format!(
-        "Websocket Heartbeat: **{}ms**",
+        "pong!! ping is **{}ms**",
         ping_ms
     );
 
