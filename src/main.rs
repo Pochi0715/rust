@@ -3,24 +3,24 @@
 use poise::serenity_prelude as serenity;
 use std::env;
 
-# [derive(Debug)]
+#[derive(Debug)]
 pub struct Data {}
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-# [poise::command(slash_command, prefix_command)]
+#[poise::command(slash_command, prefix_command)]
 async fn hello(ctx: Context<'_>) -> Result<(), Error> {
     ctx.say("Hello!! this bot makes language is **RUST!!**").await?;
     Ok(())
 }
 
-# [poise::command(slash_command, prefix_command)]
+#[poise::command(slash_command, prefix_command)]
 async fn bot(ctx: Context<'_>) -> Result<(), Error> {
     ctx.say("This bot is **RUSTテストbot**").await?;
     Ok(())
 }
 
-# [poise::command(slash_command, prefix_command)]
+#[poise::command(slash_command, prefix_command)]
 async fn name(ctx: Context<'_>) -> Result<(), Error> {
     let user = ctx.author();
     let name = &user.name;
@@ -34,7 +34,7 @@ async fn name(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-# [poise::command(slash_command, prefix_command)]
+#[poise::command(slash_command, prefix_command)]
 async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     let ping_duration = ctx.ping().await;
 
@@ -49,7 +49,7 @@ async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-# [poise::command(slash_command, prefix_command, guild_only)]
+#[poise::command(slash_command, prefix_command, guild_only)]
 async fn role(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = match ctx.guild_id() {
         Some(id) => id,
@@ -98,7 +98,37 @@ async fn role(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-# [tokio::main]
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn verify(
+    ctx: Context<'_>,
+    #[description = "Role to assign when verified"] role: serenity::Role,
+) -> Result<(), Error> {
+    let guild_id = match ctx.guild_id() {
+        Some(id) => id,
+        None => {
+            ctx.say("This command can only be used in a server.").await?;
+            return Ok(());
+        }
+    };
+
+    let role_id = role.id;
+
+    let button = serenity::CreateButton::new(format!("verify_{}", role_id))
+        .label("Verify")
+        .style(serenity::ButtonStyle::Success);
+
+    let components = vec![serenity::CreateActionRow::Buttons(vec![button])];
+
+    let builder = poise::CreateReply::default()
+        .content(format!("Click the button below to get the **{}** role!", role.name))
+        .components(components);
+
+    ctx.send(builder).await?;
+
+    Ok(())
+}
+
+#[tokio::main]
 async fn main() {
     // renderでは不要実機環境では必須
     // dotenv().expect("no settings '.env'"); 
@@ -107,11 +137,54 @@ async fn main() {
         .expect("no settings'DISCORD_TOKEN' ");
     
     let options = poise::FrameworkOptions {
-        commands: vec![hello(), bot(), name(), ping(), role()],
+        commands: vec![hello(), bot(), name(), ping(), role(), verify()],
         prefix_options: poise::PrefixFrameworkOptions {
-            prefix: Some("!".into()),
+            prefix: Some("&".into()),
             case_insensitive_commands: true,
             ..Default::default()
+        },
+        event_handler: |ctx, event, _framework, _data| {
+            Box::pin(async move {
+                if let poise::Event::InteractionCreate { interaction } = event {
+                    if let Some(interaction) = interaction.as_message_component() {
+                        if interaction.data.custom_id.starts_with("verify_") {
+                            let role_id_str = interaction.data.custom_id.strip_prefix("verify_").unwrap();
+                            if let Ok(role_id_u64) = role_id_str.parse::<u64>() {
+                                let role_id = serenity::RoleId::new(role_id_u64);
+                                
+                                if let Some(guild_id) = interaction.guild_id {
+                                    if let Some(member) = &interaction.member {
+                                        match ctx.http.add_member_role(
+                                            guild_id,
+                                            member.user.id,
+                                            role_id,
+                                            Some("Verified via button"),
+                                        ).await {
+                                            Ok(_) => {
+                                                let response = serenity::CreateInteractionResponse::Message(
+                                                    serenity::CreateInteractionResponseMessage::new()
+                                                        .content("You have been verified!")
+                                                        .ephemeral(true)
+                                                );
+                                                let _ = interaction.create_response(&ctx.http, response).await;
+                                            }
+                                            Err(e) => {
+                                                let response = serenity::CreateInteractionResponse::Message(
+                                                    serenity::CreateInteractionResponseMessage::new()
+                                                        .content(format!("Failed to assign role: {}", e))
+                                                        .ephemeral(true)
+                                                );
+                                                let _ = interaction.create_response(&ctx.http, response).await;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            })
         },
         on_error: |error| Box::pin(on_error(error)),
         ..Default::default()
