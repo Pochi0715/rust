@@ -103,14 +103,6 @@ async fn verify(
     ctx: Context<'_>,
     #[description = "Role to assign when verified"] role: serenity::Role,
 ) -> Result<(), Error> {
-    let guild_id = match ctx.guild_id() {
-        Some(id) => id,
-        None => {
-            ctx.say("This command can only be used in a server.").await?;
-            return Ok(());
-        }
-    };
-
     let role_id = role.id;
 
     let button = serenity::CreateButton::new(format!("verify_{}", role_id))
@@ -145,7 +137,7 @@ async fn main() {
         },
         event_handler: |ctx, event, _framework, _data| {
             Box::pin(async move {
-                if let poise::Event::InteractionCreate { interaction } = event {
+                if let poise::serenity_prelude::FullEvent::InteractionCreate { interaction } = event {
                     if let Some(interaction) = interaction.as_message_component() {
                         if interaction.data.custom_id.starts_with("verify_") {
                             let role_id_str = interaction.data.custom_id.strip_prefix("verify_").unwrap();
@@ -163,7 +155,7 @@ async fn main() {
                                             Ok(_) => {
                                                 let response = serenity::CreateInteractionResponse::Message(
                                                     serenity::CreateInteractionResponseMessage::new()
-                                                        .content("You have been verified!")
+                                                        .content("✅ You have been verified!")
                                                         .ephemeral(true)
                                                 );
                                                 let _ = interaction.create_response(&ctx.http, response).await;
@@ -171,7 +163,7 @@ async fn main() {
                                             Err(e) => {
                                                 let response = serenity::CreateInteractionResponse::Message(
                                                     serenity::CreateInteractionResponseMessage::new()
-                                                        .content(format!("Failed to assign role: {}", e))
+                                                        .content(format!("❌ Failed to assign role: {}", e))
                                                         .ephemeral(true)
                                                 );
                                                 let _ = interaction.create_response(&ctx.http, response).await;
