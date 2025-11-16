@@ -1,4 +1,4 @@
-// renderの場合これも消す
+// renderの場合[use dotenvy::dotenv;]をコメントアウト,実機環境では必須
 // use dotenvy::dotenv;
 use poise::serenity_prelude as serenity;
 use std::env;
@@ -120,16 +120,33 @@ async fn verify(
     Ok(())
 }
 
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn ticket(ctx: Context<'_>) -> Result<(), Error> {
+    let button = serenity::CreateButton::new("ticket_create")
+        .label("ticket")
+        .style(serenity::ButtonStyle::Primary);
+
+    let components = vec![serenity::CreateActionRow::Buttons(vec![button])];
+
+    let builder = poise::CreateReply::default()
+        .content("Click the button below to **create a ticket**!")
+        .components(components);
+
+    ctx.send(builder).await?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
-    // renderでは不要実機環境では必須
-    // dotenv().expect("no settings '.env'"); 
+    // renderでは不要,実機環境では必須
+    //dotenv().expect("no settings '.env'"); 
     
     let token = env::var("DISCORD_TOKEN")
         .expect("no settings'DISCORD_TOKEN' ");
     
     let options = poise::FrameworkOptions {
-        commands: vec![hello(), bot(), name(), ping(), role(), verify()],
+        commands: vec![hello(), bot(), name(), ping(), role(), verify(), ticket()],
         prefix_options: poise::PrefixFrameworkOptions {
             prefix: Some("&".into()),
             case_insensitive_commands: true,
@@ -155,7 +172,7 @@ async fn main() {
                                             Ok(_) => {
                                                 let response = serenity::CreateInteractionResponse::Message(
                                                     serenity::CreateInteractionResponseMessage::new()
-                                                        .content("✅ You have been verified!")
+                                                        .content("You have been verified!")
                                                         .ephemeral(true)
                                                 );
                                                 let _ = interaction.create_response(&ctx.http, response).await;
@@ -163,11 +180,123 @@ async fn main() {
                                             Err(e) => {
                                                 let response = serenity::CreateInteractionResponse::Message(
                                                     serenity::CreateInteractionResponseMessage::new()
-                                                        .content(format!("❌ Failed to assign role: {}", e))
+                                                        .content(format!("Failed to assign role: {}", e))
                                                         .ephemeral(true)
                                                 );
                                                 let _ = interaction.create_response(&ctx.http, response).await;
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        } else if interaction.data.custom_id == "ticket_create" {
+                            if let Some(guild_id) = interaction.guild_id {
+                                if let Some(member) = &interaction.member {
+                                    let user_name = &member.user.name;
+                                    let user_id = member.user.id;
+
+                                    let channels = match guild_id.channels(&ctx.http).await {
+                                        Ok(channels) => channels,
+                                        Err(e) => {
+                                            let response = serenity::CreateInteractionResponse::Message(
+                                                serenity::CreateInteractionResponseMessage::new()
+                                                    .content(format!("❌ Failed to get channels: {}", e))
+                                                    .ephemeral(true)
+                                            );
+                                            let _ = interaction.create_response(&ctx.http, response).await;
+                                            return Ok(());
+                                        }
+                                    };
+
+                                    let ticket_category = channels.values()
+                                        .find(|ch| ch.kind == serenity::ChannelType::Category && ch.name == "ticket")
+                                        .map(|ch| ch.id);
+
+                                    let category_id = match ticket_category {
+                                        Some(id) => id,
+                                        None => {
+                                            match guild_id.create_channel(&ctx.http, serenity::CreateChannel::new("ticket")
+                                                .kind(serenity::ChannelType::Category))
+                                                .await {
+                                                Ok(category) => category.id,
+                                                Err(e) => {
+                                                    let response = serenity::CreateInteractionResponse::Message(
+                                                        serenity::CreateInteractionResponseMessage::new()
+                                                            .content(format!("❌ Failed to create category: {}", e))
+                                                            .ephemeral(true)
+                                                    );
+                                                    let _ = interaction.create_response(&ctx.http, response).await;
+                                                    return Ok(());
+                                                }
+                                            }
+                                        }
+                                    };
+
+                                    let roles = match guild_id.roles(&ctx.http).await {
+                                        Ok(roles) => roles,
+                                        Err(_) => {
+                                            let response = serenity::CreateInteractionResponse::Message(
+                                                serenity::CreateInteractionResponseMessage::new()
+                                                    .content("Failed to get roles")
+                                                    .ephemeral(true)
+                                            );
+                                            let _ = interaction.create_response(&ctx.http, response).await;
+                                            return Ok(());
+                                        }
+                                    };
+
+                                    let admin_role = roles.values()
+                                        .filter(|r| r.id != serenity::RoleId::new(guild_id.get()))
+                                        .max_by_key(|r| r.position)
+                                        .map(|r| r.id);
+
+                                    let channel_name = format!("{}｜ticket", user_name);
+                                    
+                                    let mut permission_overwrites = vec![
+                                        serenity::PermissionOverwrite {
+                                            allow: serenity::Permissions::empty(),
+                                            deny: serenity::Permissions::VIEW_CHANNEL,
+                                            kind: serenity::PermissionOverwriteType::Role(guild_id.get().into()),
+                                        },
+                                        serenity::PermissionOverwrite {
+                                            allow: serenity::Permissions::VIEW_CHANNEL 
+                                                | serenity::Permissions::SEND_MESSAGES
+                                                | serenity::Permissions::READ_MESSAGE_HISTORY,
+                                            deny: serenity::Permissions::empty(),
+                                            kind: serenity::PermissionOverwriteType::Member(user_id),
+                                        },
+                                    ];
+
+                                    if let Some(admin_id) = admin_role {
+                                        permission_overwrites.push(serenity::PermissionOverwrite {
+                                            allow: serenity::Permissions::VIEW_CHANNEL
+                                                | serenity::Permissions::SEND_MESSAGES
+                                                | serenity::Permissions::READ_MESSAGE_HISTORY,
+                                            deny: serenity::Permissions::empty(),
+                                            kind: serenity::PermissionOverwriteType::Role(admin_id),
+                                        });
+                                    }
+
+                                    match guild_id.create_channel(&ctx.http, serenity::CreateChannel::new(channel_name)
+                                        .kind(serenity::ChannelType::Text)
+                                        .category(category_id)
+                                        .permissions(permission_overwrites))
+                                        .await {
+                                        Ok(_) => {
+                                            let response = serenity::CreateInteractionResponse::Message(
+                                                serenity::CreateInteractionResponseMessage::new()
+                                                    .content("Ticket channel created!")
+                                                    .ephemeral(true)
+                                            );
+                                            let _ = interaction.create_response(&ctx.http, response).await;
+                                        }
+                                        Err(e) => {
+                                            let response = serenity::CreateInteractionResponse::Message(
+                                                serenity::CreateInteractionResponseMessage::new()
+                                                    .content(format!("Failed to create channel: {}", e))
+                                                    .ephemeral(true)
+                                            );
+                                            let _ = interaction.create_response(&ctx.http, response).await;
                                         }
                                     }
                                 }
